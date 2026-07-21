@@ -116,11 +116,37 @@ AI-Code-Reviewer-Pro/
 
 ---
 
-## 🌐 Deploy to Hugging Face Spaces
+## 🌐 Deploy (free)
 
-This repository is Spaces-ready (see the YAML header above). Create a Gradio
-Space, push this repo, and set `OPENAI_API_KEY` as a **Space secret** under
-_Settings → Variables and secrets_.
+### Render (recommended — one click)
+
+This repo ships a [`render.yaml`](render.yaml) Blueprint.
+
+1. Go to **https://dashboard.render.com/blueprints** → **New Blueprint Instance**.
+2. Connect this GitHub repo (`brisinger23/AI-Code-Reviewer-Pro`).
+3. Render reads `render.yaml` and provisions a free web service.
+4. In the service's **Environment**, set `OPENAI_API_KEY` to your key and click
+   **Save** (this triggers a deploy). `OPENAI_MODEL` defaults to `gpt-4o-mini`.
+
+> The free plan sleeps after inactivity and cold-starts on the next visit.
+
+### Docker (Koyeb, Fly.io, Cloud Run, Railway, or local)
+
+A portable [`Dockerfile`](Dockerfile) is included:
+
+```bash
+docker build -t ai-code-reviewer-pro .
+docker run -p 7860:7860 -e OPENAI_API_KEY=sk-your-key ai-code-reviewer-pro
+```
+
+The app binds to `$PORT` when the host provides one, so it works on any
+container platform out of the box.
+
+### Hugging Face Spaces
+
+The repo is also Spaces-ready (see the YAML header above). Note that hosting a
+**Gradio** Space on HF's free CPU tier currently requires a PRO subscription;
+create the Space, push this repo, and set `OPENAI_API_KEY` as a **Space secret**.
 
 ---
 

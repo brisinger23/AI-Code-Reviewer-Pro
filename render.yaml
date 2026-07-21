@@ -1,0 +1,16 @@
+# Render.com Blueprint — one-click free deploy.
+# Docs: https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: ai-code-reviewer-pro
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python app.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.6"
+      - key: OPENAI_API_KEY
+        sync: false        # set this in the Render dashboard (kept secret)
+      - key: OPENAI_MODEL
+        value: gpt-4o-mini # cheap default; override anytime

@@ -304,10 +304,12 @@ def build_app() -> gr.Blocks:
 
 
 def main() -> None:
+    # Free hosts (Render, Koyeb, Cloud Run, Railway) inject the port via $PORT.
+    port = int(os.getenv("PORT", os.getenv("GRADIO_SERVER_PORT", "7860")))
     demo = build_app()
     demo.queue(default_concurrency_limit=4).launch(
         server_name=os.getenv("GRADIO_SERVER_NAME", "0.0.0.0"),
-        server_port=int(os.getenv("GRADIO_SERVER_PORT", "7860")),
+        server_port=port,
         show_api=False,
     )
 

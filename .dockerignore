@@ -1,0 +1,15 @@
+.git
+.venv
+venv
+env
+__pycache__
+*.pyc
+.env
+.env.*
+!.env.example
+assets/reports
+.gradio
+flagged
+.DS_Store
+.idea
+.vscode
