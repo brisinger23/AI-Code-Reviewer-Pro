@@ -1,4 +1,16 @@
-"""Core review engine backed by the OpenAI Responses API."""
+"""Core review engine — provider-agnostic, works with free LLM APIs.
+
+Uses the OpenAI-compatible Chat Completions interface, so the same code drives
+several providers just by pointing at a different ``base_url``:
+
+    * Groq        — free, fast, no credit card   (GROQ_API_KEY)
+    * Google Gemini — free tier                  (GEMINI_API_KEY)
+    * OpenRouter  — free ``:free`` models         (OPENROUTER_API_KEY)
+    * OpenAI      — paid                          (OPENAI_API_KEY)
+
+The provider is auto-detected from whichever API key is present (Groq first),
+or forced with the ``LLM_PROVIDER`` environment variable.
+"""
 
 from __future__ import annotations
 
@@ -9,9 +21,56 @@ from typing import Any
 from prompts import build_system_prompt, build_user_prompt
 from utils import extract_json, local_metrics
 
-# Default model. Overridable via the OPENAI_MODEL environment variable so the
-# app can be pointed at a newer or cheaper model without code changes.
-DEFAULT_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o")
+
+@dataclass(frozen=True)
+class Provider:
+    """Static configuration for an OpenAI-compatible LLM provider."""
+
+    key: str          # internal id
+    label: str        # human name
+    base_url: str | None
+    env_var: str      # environment variable holding the API key
+    default_model: str
+    signup_url: str
+
+
+# Ordered by preference for auto-detection (free options first).
+PROVIDERS: dict[str, Provider] = {
+    "groq": Provider(
+        "groq",
+        "Groq",
+        "https://api.groq.com/openai/v1",
+        "GROQ_API_KEY",
+        "llama-3.3-70b-versatile",
+        "https://console.groq.com/keys",
+    ),
+    "gemini": Provider(
+        "gemini",
+        "Google Gemini",
+        "https://generativelanguage.googleapis.com/v1beta/openai/",
+        "GEMINI_API_KEY",
+        "gemini-2.0-flash",
+        "https://aistudio.google.com/app/apikey",
+    ),
+    "openrouter": Provider(
+        "openrouter",
+        "OpenRouter",
+        "https://openrouter.ai/api/v1",
+        "OPENROUTER_API_KEY",
+        "meta-llama/llama-3.3-70b-instruct:free",
+        "https://openrouter.ai/keys",
+    ),
+    "openai": Provider(
+        "openai",
+        "OpenAI",
+        None,  # SDK default endpoint
+        "OPENAI_API_KEY",
+        "gpt-4o-mini",
+        "https://platform.openai.com/api-keys",
+    ),
+}
+
+_DETECT_ORDER = ["groq", "gemini", "openrouter", "openai"]
 
 
 class ReviewError(RuntimeError):
@@ -24,16 +83,57 @@ class ReviewResult:
 
     data: dict[str, Any]
     metrics: dict[str, int] = field(default_factory=dict)
+    provider: str = ""
+    model: str = ""
 
 
-def _get_client():
-    """Construct an OpenAI client, surfacing a clear error if unconfigured."""
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        raise ReviewError(
-            "OPENAI_API_KEY is not set. Add it to your environment or a .env "
-            "file (see README) before running a review."
-        )
+def resolve_provider() -> tuple[Provider, str]:
+    """Pick a provider + API key from the environment.
+
+    Honors an explicit ``LLM_PROVIDER`` if its key is set; otherwise returns the
+    first provider (in preference order) that has an API key configured.
+    """
+    forced = os.getenv("LLM_PROVIDER", "").strip().lower()
+    if forced:
+        provider = PROVIDERS.get(forced)
+        if not provider:
+            raise ReviewError(
+                f"Unknown LLM_PROVIDER '{forced}'. Choose one of: "
+                f"{', '.join(PROVIDERS)}."
+            )
+        api_key = os.getenv(provider.env_var, "").strip()
+        if not api_key:
+            raise ReviewError(
+                f"{provider.label} selected but {provider.env_var} is not set. "
+                f"Get a free key at {provider.signup_url}."
+            )
+        return provider, api_key
+
+    for name in _DETECT_ORDER:
+        provider = PROVIDERS[name]
+        api_key = os.getenv(provider.env_var, "").strip()
+        if api_key:
+            return provider, api_key
+
+    raise ReviewError(
+        "No API key found. Set one of these (free options first):\n"
+        "• GROQ_API_KEY — free, no card — https://console.groq.com/keys\n"
+        "• GEMINI_API_KEY — free — https://aistudio.google.com/app/apikey\n"
+        "• OPENROUTER_API_KEY — free models — https://openrouter.ai/keys\n"
+        "• OPENAI_API_KEY — paid — https://platform.openai.com/api-keys"
+    )
+
+
+def _resolve_model(provider: Provider) -> str:
+    """Model override precedence: LLM_MODEL, legacy OPENAI_MODEL, provider default."""
+    return (
+        os.getenv("LLM_MODEL")
+        or (os.getenv("OPENAI_MODEL") if provider.key == "openai" else None)
+        or provider.default_model
+    )
+
+
+def _make_client(provider: Provider, api_key: str):
     try:
         from openai import OpenAI
     except ImportError as exc:  # pragma: no cover - dependency guard
@@ -41,7 +141,26 @@ def _get_client():
             "The 'openai' package is not installed. Run: pip install -r "
             "requirements.txt"
         ) from exc
-    return OpenAI(api_key=api_key)
+    kwargs: dict[str, Any] = {"api_key": api_key}
+    if provider.base_url:
+        kwargs["base_url"] = provider.base_url
+    return OpenAI(**kwargs)
+
+
+def _chat(client, model: str, system: str, user: str, json_mode: bool):
+    """One Chat Completions call; json_mode requests a strict JSON object."""
+    kwargs: dict[str, Any] = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+        "temperature": 0.2,
+        "max_tokens": 4096,
+    }
+    if json_mode:
+        kwargs["response_format"] = {"type": "json_object"}
+    return client.chat.completions.create(**kwargs)
 
 
 def review_code(
@@ -50,36 +169,37 @@ def review_code(
     mode: str,
     model: str | None = None,
 ) -> ReviewResult:
-    """Run a single code review and return a structured result.
-
-    Uses the OpenAI Responses API. The model is instructed to emit a strict
-    JSON object which is parsed into a dictionary the UI can render.
-    """
+    """Run a single code review and return a structured result."""
     if not code or not code.strip():
         raise ReviewError("Please paste some code to review.")
 
-    client = _get_client()
-    model = model or DEFAULT_MODEL
+    provider, api_key = resolve_provider()
+    client = _make_client(provider, api_key)
+    model = model or _resolve_model(provider)
 
     system_prompt = build_system_prompt(language)
     user_prompt = build_user_prompt(code, language, mode)
 
-    try:
-        response = client.responses.create(
-            model=model,
-            input=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            temperature=0.2,
-            max_output_tokens=4096,
-        )
-    except Exception as exc:  # noqa: BLE001 - surface any API failure cleanly
-        raise ReviewError(f"OpenAI request failed: {exc}") from exc
+    # Prefer strict JSON mode; some models/providers don't support it, so retry
+    # once in plain mode and rely on defensive JSON extraction.
+    response = None
+    last_error: Exception | None = None
+    for json_mode in (True, False):
+        try:
+            response = _chat(client, model, system_prompt, user_prompt, json_mode)
+            break
+        except Exception as exc:  # noqa: BLE001
+            last_error = exc
+            continue
+
+    if response is None:
+        raise ReviewError(
+            f"{provider.label} request failed: {last_error}"
+        ) from last_error
 
     text = _response_text(response)
     if not text:
-        raise ReviewError("The model returned an empty response.")
+        raise ReviewError(f"{provider.label} returned an empty response.")
 
     try:
         data = extract_json(text)
@@ -88,24 +208,27 @@ def review_code(
             f"Could not parse the model's response as JSON. {exc}"
         ) from exc
 
-    return ReviewResult(data=_normalize(data), metrics=local_metrics(code))
+    return ReviewResult(
+        data=_normalize(data),
+        metrics=local_metrics(code),
+        provider=provider.label,
+        model=model,
+    )
 
 
 def _response_text(response: Any) -> str:
-    """Extract text from a Responses API result across SDK shapes."""
-    # Preferred convenience accessor in recent SDKs.
-    text = getattr(response, "output_text", None)
-    if text:
-        return text.strip()
-
-    # Fallback: walk the structured output blocks.
-    chunks: list[str] = []
-    for item in getattr(response, "output", []) or []:
-        for content in getattr(item, "content", []) or []:
-            piece = getattr(content, "text", None)
-            if isinstance(piece, str):
-                chunks.append(piece)
-    return "".join(chunks).strip()
+    """Extract assistant text from a Chat Completions result."""
+    try:
+        content = response.choices[0].message.content
+    except (AttributeError, IndexError, TypeError):
+        return ""
+    if isinstance(content, str):
+        return content.strip()
+    # Some providers return content as a list of parts.
+    if isinstance(content, list):
+        parts = [p.get("text", "") if isinstance(p, dict) else str(p) for p in content]
+        return "".join(parts).strip()
+    return ""
 
 
 # Keys that must always exist so the renderer never trips on missing fields.

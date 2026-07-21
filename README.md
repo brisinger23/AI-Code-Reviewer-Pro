@@ -18,7 +18,8 @@ principal-level review — bugs, security, performance, architecture,
 best-practices, complexity analysis, and a fully refactored version — all
 rendered as an interactive report you can copy or download.
 
-Powered by the **OpenAI Responses API** with careful prompt engineering.
+Provider-agnostic: run it on **Groq, Google Gemini, or OpenRouter for free**
+(or OpenAI), with careful prompt engineering.
 
 ---
 
@@ -54,17 +55,27 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 2. Configure your API key
+### 2. Configure a provider key (free options available)
+
+The app is **provider-agnostic** and auto-detects which LLM to use from whichever
+API key is present. You only need **one**:
+
+| Provider | Cost | Get a key |
+| --- | --- | --- |
+| **Groq** (recommended) | **Free**, no card | https://console.groq.com/keys |
+| **Google Gemini** | **Free** tier | https://aistudio.google.com/app/apikey |
+| **OpenRouter** | **Free** `:free` models | https://openrouter.ai/keys |
+| OpenAI | Paid | https://platform.openai.com/api-keys |
 
 ```bash
 cp .env.example .env
-# then edit .env and set OPENAI_API_KEY=sk-...
+# then edit .env and set ONE key, e.g. GROQ_API_KEY=gsk_...
 ```
 
 Or export it directly:
 
 ```bash
-export OPENAI_API_KEY="sk-your-key-here"
+export GROQ_API_KEY="gsk_your_free_key_here"
 ```
 
 ### 3. Run
@@ -79,12 +90,18 @@ Open the printed local URL (default `http://localhost:7860`).
 
 ## ⚙️ Configuration
 
-| Variable             | Default        | Description                              |
-| -------------------- | -------------- | ---------------------------------------- |
-| `OPENAI_API_KEY`     | _(required)_   | Your OpenAI API key.                     |
-| `OPENAI_MODEL`       | `gpt-4o`       | Model used for reviews.                  |
-| `GRADIO_SERVER_NAME` | `0.0.0.0`      | Host interface to bind.                  |
-| `GRADIO_SERVER_PORT` | `7860`         | Port to serve on.                        |
+| Variable              | Default            | Description                                    |
+| --------------------- | ------------------ | ---------------------------------------------- |
+| `GROQ_API_KEY`        | —                  | Groq key (free). Auto-detected first.          |
+| `GEMINI_API_KEY`      | —                  | Google Gemini key (free).                      |
+| `OPENROUTER_API_KEY`  | —                  | OpenRouter key (free models).                  |
+| `OPENAI_API_KEY`      | —                  | OpenAI key (paid).                             |
+| `LLM_PROVIDER`        | _(auto)_           | Force `groq` \| `gemini` \| `openrouter` \| `openai`. |
+| `LLM_MODEL`           | _(provider default)_ | Override the model for the active provider.  |
+| `GRADIO_SERVER_NAME`  | `0.0.0.0`          | Host interface to bind.                         |
+| `GRADIO_SERVER_PORT`  | `7860`             | Port to serve on.                               |
+
+> Set **one** provider key. Auto-detection order: Groq → Gemini → OpenRouter → OpenAI.
 
 ---
 
@@ -93,7 +110,7 @@ Open the printed local URL (default `http://localhost:7860`).
 ```
 AI-Code-Reviewer-Pro/
 ├── app.py            # Gradio UI and callbacks
-├── reviewer.py       # Review engine (OpenAI Responses API)
+├── reviewer.py       # Review engine (multi-provider, OpenAI-compatible)
 ├── prompts.py        # Prompt engineering + JSON contract
 ├── utils.py          # Catalogs, metrics, Markdown rendering
 ├── theme.css         # Dark responsive theme
@@ -108,7 +125,7 @@ AI-Code-Reviewer-Pro/
 
 1. `prompts.py` builds a strict system + user prompt, including a JSON schema
    the model must satisfy and a mode-specific review lens.
-2. `reviewer.py` calls the OpenAI Responses API, extracts the JSON, and
+2. `reviewer.py` calls the active provider's OpenAI-compatible API, extracts the JSON, and
    normalizes it so every field is always present. It also computes lightweight,
    dependency-free static metrics locally.
 3. `app.py` renders the structured result into a tabbed, dark UI and a

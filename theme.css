@@ -947,3 +947,18 @@ li[role="option"][aria-selected="true"] {
 .pill {
   padding: 7px 14px;
 }
+
+/* Provider tag shown atop the summary after a review */
+.engine-tag {
+  display: inline-block;
+  font-size: 12px;
+  color: var(--text-1);
+  background: rgba(124, 92, 255, 0.1);
+  border: 1px solid var(--panel-border);
+  border-radius: 999px;
+  padding: 5px 12px;
+  margin-bottom: 10px;
+}
+.engine-tag code {
+  color: var(--accent);
+}

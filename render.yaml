@@ -10,7 +10,12 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: "3.12.6"
-      - key: OPENAI_API_KEY
-        sync: false        # set this in the Render dashboard (kept secret)
-      - key: OPENAI_MODEL
-        value: gpt-4o-mini # cheap default; override anytime
+      # Set ONE of these in the Render dashboard (kept secret). Free first.
+      - key: GROQ_API_KEY        # free, no card — https://console.groq.com/keys
+        sync: false
+      - key: GEMINI_API_KEY      # free — https://aistudio.google.com/app/apikey
+        sync: false
+      - key: OPENROUTER_API_KEY  # free models — https://openrouter.ai/keys
+        sync: false
+      - key: OPENAI_API_KEY      # paid — https://platform.openai.com/api-keys
+        sync: false

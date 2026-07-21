@@ -196,9 +196,16 @@ def run_review(code: str, language: str, mode: str, autodetect: bool):
 
     refactored = data.get("refactored_code", "")
 
+    engine = ""
+    if result.provider:
+        engine = (
+            f"<div class='engine-tag'>⚙️ Reviewed with <strong>{result.provider}</strong>"
+            f" · <code>{result.model}</code></div>\n\n"
+        )
+
     yield (
         score_label(data.get("overall_score")),
-        f"### 📝 Summary\n\n{data.get('summary', '') or '_No summary provided._'}",
+        f"{engine}### 📝 Summary\n\n{data.get('summary', '') or '_No summary provided._'}",
         _findings_markdown(data.get("bugs", []), "severity"),
         _findings_markdown(data.get("security_issues", []), "severity"),
         _findings_markdown(data.get("performance_issues", []), "impact"),
