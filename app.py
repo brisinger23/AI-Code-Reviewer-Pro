@@ -136,17 +136,21 @@ def _error_card(title: str, message: str) -> str:
 # ---------------------------------------------------------------------------
 
 def _error_outputs(title: str, message: str):
-    """Populate every output with a graceful error state."""
+    """Populate every output with a graceful error state (shown once)."""
     card = _error_card(title, message)
+    notice = (
+        "<div class='idle-hint'><span class='idle-dot'></span> "
+        "See the summary above for details.</div>"
+    )
     return (
         "— / 10",
-        card,   # summary
-        card,   # bugs
-        _IDLE,  # security
-        _IDLE,  # performance
-        _IDLE,  # architecture
-        _IDLE,  # best practices
-        _IDLE,  # complexity
+        card,     # summary (the single, prominent error card)
+        notice,   # bugs
+        notice,   # security
+        notice,   # performance
+        notice,   # architecture
+        notice,   # best practices
+        notice,   # complexity
         gr.update(value="", visible=False),  # refactored
         "",                                   # report
         gr.update(visible=False),            # download
@@ -294,14 +298,17 @@ def build_app() -> gr.Blocks:
                             label="Review mode",
                             elem_classes="control",
                         )
-                    with gr.Row(elem_classes="detect-row"):
+                    with gr.Row(elem_classes="detect-bar", equal_height=True):
                         autodetect = gr.Checkbox(
                             value=True,
                             label="🪄 Auto-detect language",
                             elem_classes="detect-toggle",
                             scale=2,
+                            container=False,
                         )
-                        detect_status = gr.Markdown("", elem_classes="detect-status")
+                        detect_status = gr.Markdown(
+                            "", elem_classes="detect-status"
+                        )
                     code = gr.Code(
                         value=PLACEHOLDER_CODE,
                         language="python",
@@ -329,7 +336,11 @@ def build_app() -> gr.Blocks:
                         show_label=False,
                         elem_classes="score-value",
                     )
-                    gr.HTML("<div class='score-bar'><span></span></div>")
+                    gr.HTML(
+                        "<div class='score-bar'><span></span></div>"
+                        "<div class='score-hint'>Quality out of 10 · updates after "
+                        "each review</div>"
+                    )
 
                 summary = gr.Markdown(
                     "<div class='idle-hint'><span class='idle-dot'></span> "
