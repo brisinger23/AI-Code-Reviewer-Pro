@@ -81,6 +81,100 @@ def code_language_token(language: str) -> str | None:
 
 
 # ---------------------------------------------------------------------------
+# Heuristic language auto-detection
+# ---------------------------------------------------------------------------
+
+# Each rule is (language, weight, compiled-pattern). Distinctive markers get a
+# higher weight so overlapping languages (JS/TS, Java/Kotlin/C#) disambiguate.
+def _r(pattern: str) -> "re.Pattern[str]":
+    return re.compile(pattern, re.MULTILINE | re.IGNORECASE)
+
+
+_DETECTION_RULES: list[tuple[str, int, "re.Pattern[str]"]] = [
+    # Swift
+    ("Swift", 5, _r(r"\bimport\s+(Foundation|SwiftUI|UIKit)\b")),
+    ("Swift", 4, _r(r"\bfunc\s+\w+\s*\([^)]*\)\s*(->|\{)")),
+    ("Swift", 3, _r(r"\bguard\s+let\b|\bif\s+let\b")),
+    ("Swift", 2, _r(r"\b(let|var)\s+\w+\s*:\s*\w+")),
+    # Dart / Flutter
+    ("Dart", 5, _r(r"import\s+'package:")),
+    ("Dart", 5, _r(r"\bWidget\s+build\s*\(|extends\s+(StatelessWidget|StatefulWidget)")),
+    ("Dart", 3, _r(r"\bvoid\s+main\s*\(\s*\)\s*\{")),
+    # Python
+    ("Python", 5, _r(r"^\s*def\s+\w+\s*\(.*\)\s*:")),
+    ("Python", 4, _r(r"^\s*(from\s+\w+\s+import|import\s+\w+)")),
+    ("Python", 3, _r(r"\bself\b|\belif\b|\b(None|True|False)\b")),
+    ("Python", 3, _r(r'\bprint\s*\(|__name__\s*==\s*["\']__main__')),
+    # TypeScript (check before JS; needs type annotations)
+    ("TypeScript", 6, _r(r"\binterface\s+\w+\s*\{|\btype\s+\w+\s*=")),
+    ("TypeScript", 5, _r(r":\s*(string|number|boolean|void|any|unknown)\b")),
+    ("TypeScript", 4, _r(r"\b(enum|implements)\b|\bas\s+\w+")),
+    # JavaScript
+    ("JavaScript", 4, _r(r"\bconst\s+\w+\s*=|\blet\s+\w+\s*=|\bfunction\s*\*?\s*\w*\s*\(")),
+    ("JavaScript", 4, _r(r"\bconsole\.(log|error|warn)\b|\brequire\s*\(|\bmodule\.exports\b")),
+    ("JavaScript", 3, _r(r"=>|\bdocument\.|\bwindow\.")),
+    # Java
+    ("Java", 6, _r(r"\bpublic\s+(static\s+)?(class|void\s+main)\b")),
+    ("Java", 5, _r(r"\bSystem\.out\.print|import\s+java\.")),
+    ("Java", 3, _r(r"\b(public|private|protected)\s+\w+\s+\w+\s*\(")),
+    # Kotlin
+    ("Kotlin", 6, _r(r"\bfun\s+\w+\s*\(")),
+    ("Kotlin", 5, _r(r"\bimport\s+kotlin|companion\s+object|\bprintln\s*\(")),
+    ("Kotlin", 3, _r(r"\b(val|var)\s+\w+\s*(:\s*\w+)?\s*=")),
+    # Go
+    ("Go", 7, _r(r"\bpackage\s+main\b|\bfunc\s+main\s*\(\s*\)")),
+    ("Go", 5, _r(r"\bfmt\.(Print|Sprint)|import\s*\(|:=")),
+    ("Go", 3, _r(r"\bfunc\s+\(\w+\s+\*?\w+\)")),
+    # Rust
+    ("Rust", 7, _r(r"\bfn\s+\w+\s*\(|\blet\s+mut\b")),
+    ("Rust", 6, _r(r"println!|use\s+std::|\bimpl\b|\bmatch\b\s+\w+\s*\{")),
+    # C#
+    ("C#", 7, _r(r"\busing\s+System\b|\bnamespace\s+\w+|Console\.Write")),
+    ("C#", 4, _r(r"\bpublic\s+class\b|\bstatic\s+void\s+Main\b")),
+    # C++
+    ("C++", 7, _r(r"#include\s*<\w+>")),
+    ("C++", 6, _r(r"\bstd::|\bcout\b|\busing\s+namespace\s+std\b")),
+    ("C++", 3, _r(r"\bint\s+main\s*\(")),
+    # PHP
+    ("PHP", 8, _r(r"<\?php")),
+    ("PHP", 4, _r(r"\$\w+\s*=|\becho\s+|->\w+\s*\(")),
+    # Ruby
+    ("Ruby", 6, _r(r"\bdef\s+\w+.*\n(.*\n)*?\s*end\b|\bputs\s+")),
+    ("Ruby", 4, _r(r"\brequire\s+['\"]|\.each\s+do\b|\battr_accessor\b")),
+    # SQL
+    ("SQL", 7, _r(r"\bSELECT\b[\s\S]*\bFROM\b")),
+    ("SQL", 6, _r(r"\b(INSERT\s+INTO|UPDATE|DELETE\s+FROM|CREATE\s+TABLE|ALTER\s+TABLE)\b")),
+    # HTML / CSS
+    ("HTML/CSS", 8, _r(r"<!DOCTYPE\s+html|<html\b|<div\b|<body\b")),
+    ("HTML/CSS", 5, _r(r"</\w+>|<\w+[^>]*>")),
+    ("HTML/CSS", 4, _r(r"[.#]?[\w-]+\s*\{[^}]*:[^}]*;")),
+]
+
+
+def detect_language(code: str) -> tuple[str, float]:
+    """Guess the programming language of a snippet.
+
+    Returns ``(language, confidence)`` where confidence is a 0-1 score. Falls
+    back to ``("Python", 0.0)`` on empty or unrecognizable input.
+    """
+    if not code or not code.strip():
+        return "Python", 0.0
+
+    scores: dict[str, int] = {}
+    for language, weight, pattern in _DETECTION_RULES:
+        if pattern.search(code):
+            scores[language] = scores.get(language, 0) + weight
+
+    if not scores:
+        return "Python", 0.0
+
+    best = max(scores, key=scores.get)
+    total = sum(scores.values()) or 1
+    confidence = round(scores[best] / total, 2)
+    return best, confidence
+
+
+# ---------------------------------------------------------------------------
 # Local, dependency-free complexity metrics (a quick heuristic layer that
 # complements the model's qualitative complexity analysis).
 # ---------------------------------------------------------------------------

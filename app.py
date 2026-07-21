@@ -1,8 +1,8 @@
 """AI Code Reviewer Pro — Gradio application entry point.
 
-A modern, dark, responsive UI for reviewing source code across many languages
-and review lenses. The heavy lifting lives in `reviewer.py`; this module wires
-the interface and formats results.
+A premium, animated, dark, responsive UI for reviewing source code across many
+languages and review lenses. The heavy lifting lives in `reviewer.py`; this
+module wires the interface, formats results, and handles errors gracefully.
 """
 
 from __future__ import annotations
@@ -25,12 +25,14 @@ from utils import (
     REVIEW_MODE_NAMES,
     badge,
     code_language_token,
+    detect_language,
     render_markdown_report,
     score_label,
 )
 
 APP_DIR = Path(__file__).parent
 THEME_CSS = (APP_DIR / "theme.css").read_text(encoding="utf-8")
+MICRO_JS = (APP_DIR / "assets" / "interactions.js").read_text(encoding="utf-8")
 REPORTS_DIR = APP_DIR / "assets" / "reports"
 REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -44,11 +46,24 @@ result = fibonacci(35)
 print(result)
 """
 
+# Injected once into <head>; installs ripple + score count-up micro-interactions.
+HEAD_HTML = f"<script>{MICRO_JS}</script>"
+
+# Placeholder shown in every results panel before the first review.
+_IDLE = (
+    "<div class='idle-hint'><span class='idle-dot'></span> Awaiting review — "
+    "run a review to populate this panel.</div>"
+)
+
+
+# ---------------------------------------------------------------------------
+# Result formatting
+# ---------------------------------------------------------------------------
 
 def _findings_markdown(items: list[dict], impact_key: str = "severity") -> str:
     """Render a list of findings as compact Markdown for a results panel."""
     if not items:
-        return "> ✅ **No issues found in this category.**"
+        return "<div class='ok-card'>✅ <strong>No issues found in this category.</strong></div>"
     blocks = []
     for i, it in enumerate(items, 1):
         level = it.get(impact_key) or it.get("impact") or it.get("severity") or "n/a"
@@ -82,7 +97,7 @@ def _architecture_markdown(arch: dict) -> str:
 
 def _best_practices_markdown(items: list[dict]) -> str:
     if not items:
-        return "> ✅ **Code already follows the key best practices.**"
+        return "<div class='ok-card'>✅ <strong>Code already follows the key best practices.</strong></div>"
     return "\n\n---\n\n".join(
         f"### {i}. {it.get('title', '')}\n{it.get('detail', '')}"
         for i, it in enumerate(items, 1)
@@ -106,29 +121,68 @@ def _complexity_markdown(complexity: dict, metrics: dict) -> str:
     )
 
 
-def run_review(code: str, language: str, mode: str):
+def _error_card(title: str, message: str) -> str:
+    """A premium, animated error card (styled + shake via CSS)."""
+    return (
+        "<div class='error-card'>"
+        f"<div class='error-card__title'>⚠️ {title}</div>"
+        f"<div class='error-card__body'>{message}</div>"
+        "</div>"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Callbacks
+# ---------------------------------------------------------------------------
+
+def _error_outputs(title: str, message: str):
+    """Populate every output with a graceful error state."""
+    card = _error_card(title, message)
+    return (
+        "— / 10",
+        card,   # summary
+        card,   # bugs
+        _IDLE,  # security
+        _IDLE,  # performance
+        _IDLE,  # architecture
+        _IDLE,  # best practices
+        _IDLE,  # complexity
+        gr.update(value="", visible=False),  # refactored
+        "",                                   # report
+        gr.update(visible=False),            # download
+    )
+
+
+def run_review(code: str, language: str, mode: str, autodetect: bool):
     """Gradio callback: run a review and populate every output component."""
+    # Friendly guard before hitting the API.
+    if not code or not code.strip():
+        yield _error_outputs(
+            "Nothing to review",
+            "Paste some code into the editor, then click <strong>Review Code</strong>.",
+        )
+        return
+
+    # Auto-detect keeps the language in sync with what was actually pasted.
+    if autodetect:
+        detected, confidence = detect_language(code)
+        if confidence >= 0.25:
+            language = detected
+
     try:
         result = review_code(code, language, mode)
     except ReviewError as exc:
-        error_md = f"### ⚠️ Review could not be completed\n\n{exc}"
-        return (
-            "— / 10",
-            error_md,   # summary
-            error_md,   # bugs
-            "",         # security
-            "",         # performance
-            "",         # architecture
-            "",         # best practices
-            "",         # complexity
-            gr.update(value="", visible=False),   # refactored code
-            "",         # markdown report
-            gr.update(visible=False),             # download
+        yield _error_outputs("Review could not be completed", str(exc))
+        return
+    except Exception as exc:  # noqa: BLE001 - never crash the UI
+        yield _error_outputs(
+            "Unexpected error",
+            f"{exc}<br><br>Please try again in a moment.",
         )
+        return
 
     data = result.data
     metrics = result.metrics
-
     report_md = render_markdown_report(data, language, mode, metrics)
 
     # Persist the report so it can be downloaded.
@@ -138,7 +192,7 @@ def run_review(code: str, language: str, mode: str):
 
     refactored = data.get("refactored_code", "")
 
-    return (
+    yield (
         score_label(data.get("overall_score")),
         f"### 📝 Summary\n\n{data.get('summary', '') or '_No summary provided._'}",
         _findings_markdown(data.get("bugs", []), "severity"),
@@ -162,13 +216,47 @@ def on_language_change(language: str):
     return gr.update(language=code_language_token(language))
 
 
+def autodetect_on_edit(code: str, enabled: bool, current_lang: str):
+    """Live language detection as the user edits, without disrupting typing."""
+    if not enabled or not code or not code.strip():
+        return gr.update(), gr.update(), gr.update(value="")
+
+    lang, confidence = detect_language(code)
+    pct = int(confidence * 100)
+    if confidence < 0.25:
+        status = "🪄 <span class='detect-muted'>Auto-detect: not enough signal yet…</span>"
+        return gr.update(), gr.update(), gr.update(value=status)
+
+    status = f"🪄 Detected <strong>{lang}</strong> · <span class='detect-pct'>{pct}%</span>"
+    if lang == current_lang:
+        return gr.update(), gr.update(), gr.update(value=status)
+
+    # Switch language + editor highlighting; value unchanged so no edit loop.
+    return (
+        gr.update(value=lang),
+        gr.update(language=code_language_token(lang)),
+        gr.update(value=status),
+    )
+
+
+# ---------------------------------------------------------------------------
+# UI
+# ---------------------------------------------------------------------------
+
 def build_app() -> gr.Blocks:
     with gr.Blocks(
         title="AI Code Reviewer Pro",
-        theme=gr.themes.Base(),
+        theme=gr.themes.Base(
+            primary_hue=gr.themes.colors.indigo,
+            neutral_hue=gr.themes.colors.slate,
+        ),
         css=THEME_CSS,
+        head=HEAD_HTML,
         fill_height=True,
     ) as demo:
+        # Animated ambient background layers.
+        gr.HTML("<div class='aurora'></div><div class='grid-overlay'></div>")
+
         gr.HTML(
             """
             <div class="app-header">
@@ -176,9 +264,14 @@ def build_app() -> gr.Blocks:
                 <span class="app-header__logo">⌘</span>
                 <div>
                   <h1>AI Code Reviewer Pro</h1>
-                  <p>Principal-level, multi-language code review — powered by the
-                     OpenAI Responses API.</p>
+                  <p>Principal-level, multi-language code review — with instant
+                     language detection and an actionable, downloadable report.</p>
                 </div>
+              </div>
+              <div class="app-header__badges">
+                <span class="pill pill--live">● Live</span>
+                <span class="pill">15 languages</span>
+                <span class="pill">8 review modes</span>
               </div>
             </div>
             """
@@ -187,7 +280,7 @@ def build_app() -> gr.Blocks:
         with gr.Row(equal_height=False):
             # ---------------- Left: input column ----------------
             with gr.Column(scale=5, min_width=380):
-                with gr.Group(elem_classes="panel"):
+                with gr.Group(elem_classes="panel panel--in"):
                     with gr.Row():
                         language = gr.Dropdown(
                             LANGUAGES,
@@ -201,6 +294,14 @@ def build_app() -> gr.Blocks:
                             label="Review mode",
                             elem_classes="control",
                         )
+                    with gr.Row(elem_classes="detect-row"):
+                        autodetect = gr.Checkbox(
+                            value=True,
+                            label="🪄 Auto-detect language",
+                            elem_classes="detect-toggle",
+                            scale=2,
+                        )
+                        detect_status = gr.Markdown("", elem_classes="detect-status")
                     code = gr.Code(
                         value=PLACEHOLDER_CODE,
                         language="python",
@@ -210,41 +311,45 @@ def build_app() -> gr.Blocks:
                     )
                     with gr.Row():
                         review_btn = gr.Button(
-                            "🔍 Review Code",
+                            "🔍  Review Code",
                             variant="primary",
                             elem_classes="review-btn",
                             scale=3,
                         )
-                        clear_btn = gr.Button("Clear", scale=1)
+                        clear_btn = gr.Button(
+                            "Clear", elem_classes="ghost-btn", scale=1
+                        )
 
             # ---------------- Right: results column ----------------
             with gr.Column(scale=7, min_width=420):
-                with gr.Group(elem_classes="panel score-panel"):
-                    gr.Markdown("#### Overall score")
+                with gr.Group(elem_classes="panel score-panel panel--in"):
+                    gr.HTML("<div class='score-caption'>Overall score</div>")
                     score = gr.Label(
                         value="— / 10",
                         show_label=False,
                         elem_classes="score-value",
                     )
+                    gr.HTML("<div class='score-bar'><span></span></div>")
 
                 summary = gr.Markdown(
-                    "Run a review to see the summary here.",
-                    elem_classes="panel summary-panel",
+                    "<div class='idle-hint'><span class='idle-dot'></span> "
+                    "Run a review to see the executive summary here.</div>",
+                    elem_classes="panel summary-panel panel--in",
                 )
 
-                with gr.Tabs():
+                with gr.Tabs(elem_classes="result-tabs"):
                     with gr.Tab("🐞 Bugs"):
-                        bugs_out = gr.Markdown("_Awaiting review…_")
+                        bugs_out = gr.Markdown(_IDLE)
                     with gr.Tab("🔒 Security"):
-                        security_out = gr.Markdown("_Awaiting review…_")
+                        security_out = gr.Markdown(_IDLE)
                     with gr.Tab("⚡ Performance"):
-                        performance_out = gr.Markdown("_Awaiting review…_")
+                        performance_out = gr.Markdown(_IDLE)
                     with gr.Tab("🏛️ Architecture"):
-                        architecture_out = gr.Markdown("_Awaiting review…_")
+                        architecture_out = gr.Markdown(_IDLE)
                     with gr.Tab("✅ Best Practices"):
-                        best_out = gr.Markdown("_Awaiting review…_")
+                        best_out = gr.Markdown(_IDLE)
                     with gr.Tab("📊 Complexity"):
-                        complexity_out = gr.Markdown("_Awaiting review…_")
+                        complexity_out = gr.Markdown(_IDLE)
                     with gr.Tab("♻️ Refactored"):
                         refactored_out = gr.Code(
                             label="Refactored code",
@@ -257,15 +362,17 @@ def build_app() -> gr.Blocks:
                             elem_classes="report-panel",
                         )
                         download_btn = gr.DownloadButton(
-                            "⬇️ Download report (.md)",
+                            "⬇️  Download report (.md)",
                             visible=False,
+                            elem_classes="download-btn",
                         )
 
         gr.HTML(
             """
             <div class="app-footer">
-              Paste code, pick a language and review mode, then click
-              <strong>Review Code</strong>. Reports can be copied or downloaded.
+              Paste code, pick a review mode, then hit
+              <strong>Review Code</strong>. Language is detected automatically —
+              reports can be copied or downloaded.
             </div>
             """
         )
@@ -287,17 +394,26 @@ def build_app() -> gr.Blocks:
 
         review_btn.click(
             fn=run_review,
-            inputs=[code, language, mode],
+            inputs=[code, language, mode, autodetect],
             outputs=outputs,
             api_name="review",
+            show_progress="full",
+        )
+
+        # Live auto-detection as the user edits.
+        code.change(
+            fn=autodetect_on_edit,
+            inputs=[code, autodetect, language],
+            outputs=[language, code, detect_status],
+            show_progress="hidden",
         )
 
         language.change(fn=on_language_change, inputs=language, outputs=code)
 
         clear_btn.click(
-            fn=lambda: gr.update(value=""),
+            fn=lambda: (gr.update(value=""), gr.update(value="")),
             inputs=None,
-            outputs=code,
+            outputs=[code, detect_status],
         )
 
     return demo
