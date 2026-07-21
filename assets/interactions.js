@@ -27,29 +27,28 @@
     });
   }
 
-  /* ---- Animated count-up for the score label ---- */
-  function animateScore(el) {
+  /* ---- Animated count-up + ring fill for the score gauge ---- */
+  function animateScore(ring) {
     try {
-      var raw = (el.textContent || "").trim();
-      var match = raw.match(/([0-9]+(?:\.[0-9]+)?)\s*\/\s*10/);
-      if (!match) return;
-      var target = parseFloat(match[1]);
-      if (el.__lastScore === target) return;
-      el.__lastScore = target;
+      var numEl = ring.querySelector(".score-num");
+      var raw = ring.getAttribute("data-score") || "";
+      var target = parseFloat(raw);
+      if (isNaN(target)) return;
+      if (ring.__lastScore === target) return;
+      ring.__lastScore = target;
 
       var start = null;
-      var duration = 900;
+      var duration = 950;
       function frame(ts) {
         if (start === null) start = ts;
         var p = Math.min((ts - start) / duration, 1);
         var eased = 1 - Math.pow(1 - p, 3); // easeOutCubic
-        var val = (target * eased).toFixed(1);
-        el.textContent = val + " / 10";
-        // Drive the score bar width via a CSS variable on :root scope.
-        var bar = document.querySelector(".score-bar > span");
-        if (bar) bar.style.width = (target / 10) * 100 * eased + "%";
+        if (numEl) numEl.textContent = (target * eased).toFixed(1);
+        ring.style.setProperty("--pct", (target / 10) * 100 * eased + "%");
         if (p < 1) requestAnimationFrame(frame);
       }
+      // Begin the fill from zero for a satisfying sweep.
+      ring.style.setProperty("--pct", "0%");
       requestAnimationFrame(frame);
     } catch (_) {}
   }
@@ -59,8 +58,9 @@
     document
       .querySelectorAll(".review-btn, .download-btn, .ghost-btn")
       .forEach(attachRipple);
-    var score = document.querySelector(".score-value");
-    if (score) animateScore(score);
+    document.querySelectorAll(".score-ring[data-score]").forEach(function (r) {
+      if (r.getAttribute("data-score") !== "—") animateScore(r);
+    });
   }
 
   function boot() {

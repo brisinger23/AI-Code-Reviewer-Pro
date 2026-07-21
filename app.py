@@ -27,7 +27,6 @@ from utils import (
     code_language_token,
     detect_language,
     render_markdown_report,
-    score_label,
 )
 
 APP_DIR = Path(__file__).parent
@@ -54,6 +53,47 @@ _IDLE = (
     "<div class='idle-hint'><span class='idle-dot'></span> Awaiting review — "
     "run a review to populate this panel.</div>"
 )
+
+
+def score_card(value) -> str:
+    """Render the overall score as a circular gauge card."""
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        v = None
+
+    if v is None:
+        pct, num, verdict, vclass = 0.0, "—", "Awaiting review", "muted"
+    else:
+        v = max(0.0, min(10.0, v))
+        pct = v / 10 * 100
+        num = f"{v:.1f}"
+        if v >= 8.5:
+            verdict, vclass = "Excellent", "exc"
+        elif v >= 7:
+            verdict, vclass = "Great", "good"
+        elif v >= 5:
+            verdict, vclass = "Fair", "fair"
+        elif v >= 3:
+            verdict, vclass = "Needs work", "warn"
+        else:
+            verdict, vclass = "Poor", "poor"
+
+    return (
+        "<div class='score-hero'>"
+        "<div class='score-cap'>Overall score</div>"
+        f"<div class='score-ring score-ring--{vclass}' style='--pct:{pct:.1f}%' "
+        f"data-score='{num}'>"
+        "<div class='score-ring__inner'>"
+        f"<span class='score-num'>{num}</span>"
+        "<span class='score-den'>/ 10</span>"
+        "</div></div>"
+        f"<div class='score-verdict score-verdict--{vclass}'>{verdict}</div>"
+        "</div>"
+    )
+
+
+SCORE_PLACEHOLDER = score_card(None)
 
 
 # ---------------------------------------------------------------------------
@@ -143,7 +183,7 @@ def _error_outputs(title: str, message: str):
         "See the summary above for details.</div>"
     )
     return (
-        "— / 10",
+        SCORE_PLACEHOLDER,
         card,     # summary (the single, prominent error card)
         notice,   # bugs
         notice,   # security
@@ -204,7 +244,7 @@ def run_review(code: str, language: str, mode: str, autodetect: bool):
         )
 
     yield (
-        score_label(data.get("overall_score")),
+        score_card(data.get("overall_score")),
         f"{engine}### 📝 Summary\n\n{data.get('summary', '') or '_No summary provided._'}",
         _findings_markdown(data.get("bugs", []), "severity"),
         _findings_markdown(data.get("security_issues", []), "severity"),
@@ -291,8 +331,15 @@ def build_app() -> gr.Blocks:
         with gr.Row(equal_height=False):
             # ---------------- Left: input column ----------------
             with gr.Column(scale=5, min_width=380):
-                with gr.Group(elem_classes="panel panel--in"):
-                    with gr.Row():
+                with gr.Group(elem_classes="panel panel--in input-panel"):
+                    gr.HTML(
+                        "<div class='card-head'>"
+                        "<span class='card-head__icon'>⌨️</span>"
+                        "<span class='card-head__title'>Code Editor</span>"
+                        "<span class='card-head__sub'>Paste code & configure the review</span>"
+                        "</div>"
+                    )
+                    with gr.Row(elem_classes="control-row"):
                         language = gr.Dropdown(
                             LANGUAGES,
                             value="Python",
@@ -336,26 +383,24 @@ def build_app() -> gr.Blocks:
 
             # ---------------- Right: results column ----------------
             with gr.Column(scale=7, min_width=420):
-                with gr.Group(elem_classes="panel score-panel panel--in"):
-                    gr.HTML("<div class='score-caption'>Overall score</div>")
-                    score = gr.Label(
-                        value="— / 10",
-                        show_label=False,
-                        elem_classes="score-value",
-                    )
-                    gr.HTML(
-                        "<div class='score-bar'><span></span></div>"
-                        "<div class='score-hint'>Quality out of 10 · updates after "
-                        "each review</div>"
-                    )
+                with gr.Row(equal_height=True, elem_classes="results-top"):
+                    with gr.Column(scale=2, min_width=180):
+                        score = gr.HTML(
+                            SCORE_PLACEHOLDER,
+                            elem_classes="panel score-panel panel--in",
+                        )
+                    with gr.Column(scale=5, min_width=280):
+                        summary = gr.Markdown(
+                            "<div class='card-head'>"
+                            "<span class='card-head__icon'>📝</span>"
+                            "<span class='card-head__title'>Summary</span></div>"
+                            "<div class='idle-hint'><span class='idle-dot'></span> "
+                            "Run a review to see the executive summary here.</div>",
+                            elem_classes="panel summary-panel panel--in",
+                        )
 
-                summary = gr.Markdown(
-                    "<div class='idle-hint'><span class='idle-dot'></span> "
-                    "Run a review to see the executive summary here.</div>",
-                    elem_classes="panel summary-panel panel--in",
-                )
-
-                with gr.Tabs(elem_classes="result-tabs"):
+                with gr.Group(elem_classes="panel tabs-panel panel--in"):
+                  with gr.Tabs(elem_classes="result-tabs"):
                     with gr.Tab("🐞 Bugs"):
                         bugs_out = gr.Markdown(_IDLE)
                     with gr.Tab("🔒 Security"):
