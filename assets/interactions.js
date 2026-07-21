@@ -61,6 +61,17 @@
     document.querySelectorAll(".score-ring[data-score]").forEach(function (r) {
       if (r.getAttribute("data-score") !== "—") animateScore(r);
     });
+    // Nav active-state toggle (view switch is handled server-side).
+    document.querySelectorAll(".topnav__link").forEach(function (link) {
+      if (link.__navBound) return;
+      link.__navBound = true;
+      link.addEventListener("click", function () {
+        document
+          .querySelectorAll(".topnav__link")
+          .forEach(function (l) { l.classList.remove("is-active"); });
+        link.classList.add("is-active");
+      });
+    });
   }
 
   function boot() {

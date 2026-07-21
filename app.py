@@ -7,6 +7,7 @@ module wires the interface, formats results, and handles errors gracefully.
 
 from __future__ import annotations
 
+import datetime as _dt
 import os
 from pathlib import Path
 
@@ -63,24 +64,19 @@ def _icon(name: str, cls: str = "") -> str:
     return f"<span class='material-symbols-outlined {cls}'>{name}</span>"
 
 
-TOPNAV_HTML = f"""
-<header class="topnav">
-  <div class="topnav__brand">
-    <div class="topnav__logo">{_icon('terminal')}</div>
-    <span class="topnav__name">AI Code Reviewer Pro</span>
-  </div>
-  <nav class="topnav__links">
-    <a class="topnav__link is-active">Dashboard</a>
-    <a class="topnav__link">Projects</a>
-    <a class="topnav__link">History</a>
-    <a class="topnav__link">Settings</a>
-  </nav>
-  <div class="topnav__right">
-    <div class="live-pill"><span class="live-dot"></span> Live Analysis</div>
-    <button class="icon-btn" title="Notifications">{_icon('notifications')}</button>
-    <div class="avatar">{_icon('smart_toy')}</div>
-  </div>
-</header>
+BRAND_HTML = f"""
+<div class="topnav__brand">
+  <div class="topnav__logo">{_icon('terminal')}</div>
+  <span class="topnav__name">AI Code Reviewer Pro</span>
+</div>
+"""
+
+NAV_RIGHT_HTML = f"""
+<div class="topnav__right">
+  <div class="live-pill"><span class="live-dot"></span> Live Analysis</div>
+  <button class="icon-btn" title="Notifications">{_icon('notifications')}</button>
+  <div class="avatar">{_icon('smart_toy')}</div>
+</div>
 """
 
 FOOTER_HTML = """
@@ -89,13 +85,52 @@ FOOTER_HTML = """
     <p class="site-footer__copy">© 2026 AI Code Reviewer Pro · Deep analysis active.</p>
     <p class="site-footer__meta">ENGINE_V4.2.0_STABLE // MULTI_PROVIDER</p>
   </div>
-  <div class="site-footer__links">
-    <a>Terms of Service</a>
-    <a>Privacy Policy</a>
-    <a>API Documentation</a>
-  </div>
 </footer>
 """
+
+
+def render_history(items: list[dict]) -> str:
+    """Render the session review history as a list of cards (newest first)."""
+    if not items:
+        return (
+            "<div class='hist-empty'>"
+            f"{_icon('history', 'hist-empty__icon')}"
+            "<div class='hist-empty__title'>No reviews yet</div>"
+            "<div class='hist-empty__sub'>Runs from this session will appear here.</div>"
+            "</div>"
+        )
+
+    rows = []
+    for it in reversed(items):
+        try:
+            v = float(it.get("score"))
+            score_txt = f"{v:.1f}"
+            if v >= 8.5:
+                vc = "exc"
+            elif v >= 7:
+                vc = "good"
+            elif v >= 5:
+                vc = "fair"
+            elif v >= 3:
+                vc = "warn"
+            else:
+                vc = "poor"
+        except (TypeError, ValueError):
+            score_txt, vc = "—", "muted"
+
+        summary = (it.get("summary") or "").strip() or "No summary."
+        rows.append(
+            "<div class='hist-card'>"
+            f"<div class='hist-score hist-score--{vc}'>{score_txt}</div>"
+            "<div class='hist-body'>"
+            f"<div class='hist-meta'><span class='hist-lang'>{it.get('language','')}</span>"
+            f"<span class='hist-mode'>{it.get('mode','')}</span>"
+            f"<span class='hist-time'>{it.get('time','')}</span></div>"
+            f"<div class='hist-summary'>{summary}</div>"
+            f"<div class='hist-provider'>⚙️ {it.get('provider','')}</div>"
+            "</div></div>"
+        )
+    return "<div class='hist-list'>" + "".join(rows) + "</div>"
 
 # Placeholder shown in every results panel before the first review.
 _IDLE = (
@@ -246,13 +281,22 @@ def _error_outputs(title: str, message: str):
     )
 
 
-def run_review(code: str, language: str, mode: str, autodetect: bool):
+def run_review(
+    code: str, language: str, mode: str, autodetect: bool, history: list | None
+):
     """Gradio callback: run a review and populate every output component."""
+    history = list(history or [])
+
     # Friendly guard before hitting the API.
     if not code or not code.strip():
-        yield _error_outputs(
-            "Nothing to review",
-            "Paste some code into the editor, then click <strong>Review Code</strong>.",
+        yield (
+            *_error_outputs(
+                "Nothing to review",
+                "Paste some code into the editor, then click "
+                "<strong>Review Code</strong>.",
+            ),
+            history,
+            gr.update(),
         )
         return
 
@@ -265,13 +309,13 @@ def run_review(code: str, language: str, mode: str, autodetect: bool):
     try:
         result = review_code(code, language, mode)
     except ReviewError as exc:
-        yield _error_outputs("Review could not be completed", str(exc))
+        yield (*_error_outputs("Review could not be completed", str(exc)),
+               history, gr.update())
         return
     except Exception as exc:  # noqa: BLE001 - never crash the UI
-        yield _error_outputs(
-            "Unexpected error",
-            f"{exc}<br><br>Please try again in a moment.",
-        )
+        yield (*_error_outputs("Unexpected error",
+                               f"{exc}<br><br>Please try again in a moment."),
+               history, gr.update())
         return
 
     data = result.data
@@ -292,6 +336,18 @@ def run_review(code: str, language: str, mode: str, autodetect: bool):
             f" · <code>{result.model}</code></div>\n\n"
         )
 
+    # Record this review in the session history (newest rendered first).
+    history.append(
+        {
+            "time": _dt.datetime.now().strftime("%H:%M:%S"),
+            "language": language,
+            "mode": mode,
+            "score": data.get("overall_score"),
+            "summary": (data.get("summary") or "")[:180],
+            "provider": result.provider or "—",
+        }
+    )
+
     yield (
         score_card(data.get("overall_score")),
         f"{engine}### 📝 Summary\n\n{data.get('summary', '') or '_No summary provided._'}",
@@ -308,6 +364,8 @@ def run_review(code: str, language: str, mode: str, autodetect: bool):
         ),
         report_md,
         gr.update(value=str(report_path), visible=True),
+        history,
+        render_history(history),
     )
 
 
@@ -357,10 +415,33 @@ def build_app() -> gr.Blocks:
         # Ambient background glow.
         gr.HTML("<div class='aurora'></div><div class='grid-overlay'></div>")
 
-        # Top navigation bar.
-        gr.HTML(TOPNAV_HTML)
+        history_state = gr.State([])
 
-        with gr.Row(equal_height=False, elem_classes="workspace"):
+        # Top navigation bar (brand · clickable nav · status cluster).
+        with gr.Row(elem_classes="topnav", equal_height=True):
+            gr.HTML(BRAND_HTML)
+            with gr.Row(elem_classes="topnav__links"):
+                nav_dashboard = gr.Button(
+                    "Dashboard", elem_classes="topnav__link is-active"
+                )
+                nav_history = gr.Button("History", elem_classes="topnav__link")
+            gr.HTML(NAV_RIGHT_HTML)
+
+      # ================= HISTORY VIEW =================
+        with gr.Column(visible=False, elem_classes="view-history") as history_col:
+            gr.HTML(
+                "<div class='view-head'>"
+                f"{_icon('history', 'view-head__icon')}"
+                "<div><div class='view-head__title'>Review History</div>"
+                "<div class='view-head__sub'>Every review you run this session</div>"
+                "</div></div>"
+            )
+            history_view = gr.HTML(render_history([]))
+
+      # ================= DASHBOARD VIEW =================
+        dashboard_col = gr.Column(visible=True, elem_classes="view-dashboard")
+        with dashboard_col:
+          with gr.Row(equal_height=False, elem_classes="workspace"):
             # ============ LEFT: Code Editor ============
             with gr.Column(scale=6, min_width=420, elem_classes="col-editor"):
                 with gr.Group(elem_classes="panel editor-card panel--in"):
@@ -488,11 +569,13 @@ def build_app() -> gr.Blocks:
             refactored_out,
             report_out,
             download_btn,
+            history_state,
+            history_view,
         ]
 
         review_btn.click(
             fn=run_review,
-            inputs=[code, language, mode, autodetect],
+            inputs=[code, language, mode, autodetect, history_state],
             outputs=outputs,
             api_name="review",
             show_progress="full",
@@ -512,6 +595,21 @@ def build_app() -> gr.Blocks:
             fn=lambda: (gr.update(value=""), gr.update(value="")),
             inputs=None,
             outputs=[code, detect_status],
+        )
+
+        # -------- Nav view switching (Dashboard <-> History) --------
+        # queue=False -> instant UI toggle, bypasses the inference queue.
+        nav_dashboard.click(
+            fn=lambda: (gr.update(visible=True), gr.update(visible=False)),
+            inputs=None,
+            outputs=[dashboard_col, history_col],
+            queue=False,
+        )
+        nav_history.click(
+            fn=lambda: (gr.update(visible=False), gr.update(visible=True)),
+            inputs=None,
+            outputs=[dashboard_col, history_col],
+            queue=False,
         )
 
     return demo

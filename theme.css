@@ -70,6 +70,7 @@ gradio-app,
   color: var(--on-surface) !important;
   font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
     sans-serif;
+  overflow-x: hidden;
 }
 .gradio-container {
   max-width: 1440px !important;
@@ -138,22 +139,68 @@ gradio-app,
   mask-image: radial-gradient(circle at 50% 0%, black, transparent 80%);
 }
 
-/* ==================== TOP NAV ==================== */
+/* ==================== TOP NAV (Gradio Row) ==================== */
 .topnav {
   position: sticky;
   top: 0;
   z-index: 50;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  padding: 14px 32px;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 20px !important;
+  flex-wrap: nowrap !important;
+  padding: 12px 32px !important;
   margin-bottom: 24px;
-  background: rgba(29, 31, 41, 0.72);
+  background: rgba(17, 19, 28, 0.92);
   backdrop-filter: blur(22px);
   -webkit-backdrop-filter: blur(22px);
   border-bottom: 1px solid var(--glass-border);
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+}
+.topnav > .block {
+  flex: 0 0 auto !important;
+  width: auto !important;
+  min-width: 0 !important;
+}
+.topnav__links {
+  flex: 1 1 auto !important;
+  width: auto !important;
+  justify-content: center !important;
+  align-items: center !important;
+  gap: 8px !important;
+  flex-wrap: nowrap !important;
+  background: transparent !important;
+  border: none !important;
+  min-width: 0 !important;
+}
+.topnav__links > * {
+  flex: 0 0 auto !important;
+  min-width: 0 !important;
+}
+button.topnav__link {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  color: var(--on-variant) !important;
+  font-family: "JetBrains Mono", monospace !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.08em !important;
+  text-transform: uppercase;
+  min-width: auto !important;
+  width: auto !important;
+  padding: 7px 12px !important;
+  border-radius: 6px !important;
+  border-bottom: 2px solid transparent !important;
+  transition: color 0.2s var(--ease), background 0.2s var(--ease);
+}
+button.topnav__link:hover {
+  color: var(--on-surface) !important;
+  background: rgba(255, 255, 255, 0.05) !important;
+}
+button.topnav__link.is-active {
+  color: var(--primary) !important;
+  border-bottom-color: var(--primary) !important;
+  border-radius: 6px 6px 0 0 !important;
 }
 .topnav__brand {
   display: flex;
@@ -184,30 +231,6 @@ gradio-app,
   font-weight: 800;
   letter-spacing: -0.02em;
   color: var(--on-surface);
-}
-.topnav__links {
-  display: flex;
-  align-items: center;
-  gap: 28px;
-}
-.topnav__link {
-  font-family: "JetBrains Mono", monospace;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--on-variant);
-  padding-bottom: 3px;
-  cursor: pointer;
-  border-bottom: 2px solid transparent;
-  transition: color 0.2s var(--ease), border-color 0.2s var(--ease);
-}
-.topnav__link:hover {
-  color: var(--on-surface);
-}
-.topnav__link.is-active {
-  color: var(--primary);
-  border-bottom-color: var(--primary);
 }
 .topnav__right {
   display: flex;
@@ -887,6 +910,132 @@ li[role="option"][aria-selected="true"] {
 /* Hide default Gradio footer */
 footer { display: none !important; }
 .progress-bar, .eta-bar { background: var(--grad-primary) !important; }
+
+/* ==================== HISTORY VIEW ==================== */
+.view-history {
+  padding: 0 32px 8px !important;
+}
+.view-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 4px 4px 20px;
+}
+.view-head__icon {
+  font-size: 30px;
+  color: var(--primary);
+}
+.view-head__title {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--on-surface);
+}
+.view-head__sub {
+  font-size: 13px;
+  color: var(--outline);
+}
+.hist-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.hist-card {
+  display: flex;
+  gap: 16px;
+  align-items: stretch;
+  padding: 16px 18px;
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow);
+  animation: fadeUp 0.4s var(--ease) both;
+  transition: border-color 0.2s var(--ease), transform 0.2s var(--ease);
+}
+.hist-card:hover {
+  border-color: var(--glass-border-hi);
+  transform: translateX(3px);
+}
+.hist-score {
+  flex: 0 0 auto;
+  width: 58px;
+  display: grid;
+  place-items: center;
+  font-size: 22px;
+  font-weight: 800;
+  border-radius: var(--r);
+  border: 1px solid var(--glass-border);
+}
+.hist-score--exc { color: #7dffd6; background: rgba(52, 230, 176, 0.12); }
+.hist-score--good { color: var(--primary); background: rgba(93, 92, 255, 0.14); }
+.hist-score--fair { color: var(--tertiary); background: rgba(233, 179, 255, 0.12); }
+.hist-score--warn { color: #ffcf6e; background: rgba(255, 157, 60, 0.12); }
+.hist-score--poor { color: var(--error); background: rgba(255, 107, 107, 0.12); }
+.hist-score--muted { color: var(--outline); }
+.hist-body {
+  flex: 1;
+  min-width: 0;
+}
+.hist-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+.hist-lang {
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--on-surface);
+}
+.hist-mode {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--primary);
+  background: rgba(93, 92, 255, 0.14);
+  padding: 3px 9px;
+  border-radius: 999px;
+}
+.hist-time {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  color: var(--outline);
+  margin-left: auto;
+}
+.hist-summary {
+  font-size: 13.5px;
+  color: var(--on-variant);
+  line-height: 1.55;
+}
+.hist-provider {
+  font-size: 11px;
+  color: var(--outline);
+  margin-top: 6px;
+}
+.hist-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 60px 20px;
+  text-align: center;
+}
+.hist-empty__icon {
+  font-size: 48px;
+  color: var(--outline-variant);
+}
+.hist-empty__title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--on-surface);
+}
+.hist-empty__sub {
+  font-size: 13px;
+  color: var(--outline);
+}
 
 /* ==================== RESPONSIVE ==================== */
 @media (max-width: 1100px) {
