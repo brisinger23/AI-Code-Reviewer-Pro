@@ -45,8 +45,57 @@ result = fibonacci(35)
 print(result)
 """
 
-# Injected once into <head>; installs ripple + score count-up micro-interactions.
-HEAD_HTML = f"<script>{MICRO_JS}</script>"
+# Injected once into <head>; fonts, icon set, and micro-interaction script.
+HEAD_HTML = (
+    '<link rel="preconnect" href="https://fonts.googleapis.com">'
+    '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
+    '<link href="https://fonts.googleapis.com/css2?'
+    "family=Inter:wght@400;500;600;700;900&"
+    "family=JetBrains+Mono:wght@400;500;700&"
+    'family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&display=swap" '
+    'rel="stylesheet">'
+    f"<script>{MICRO_JS}</script>"
+)
+
+
+def _icon(name: str, cls: str = "") -> str:
+    """Render a Material Symbols icon span."""
+    return f"<span class='material-symbols-outlined {cls}'>{name}</span>"
+
+
+TOPNAV_HTML = f"""
+<header class="topnav">
+  <div class="topnav__brand">
+    <div class="topnav__logo">{_icon('terminal')}</div>
+    <span class="topnav__name">AI Code Reviewer Pro</span>
+  </div>
+  <nav class="topnav__links">
+    <a class="topnav__link is-active">Dashboard</a>
+    <a class="topnav__link">Projects</a>
+    <a class="topnav__link">History</a>
+    <a class="topnav__link">Settings</a>
+  </nav>
+  <div class="topnav__right">
+    <div class="live-pill"><span class="live-dot"></span> Live Analysis</div>
+    <button class="icon-btn" title="Notifications">{_icon('notifications')}</button>
+    <div class="avatar">{_icon('smart_toy')}</div>
+  </div>
+</header>
+"""
+
+FOOTER_HTML = """
+<footer class="site-footer">
+  <div class="site-footer__left">
+    <p class="site-footer__copy">© 2026 AI Code Reviewer Pro · Deep analysis active.</p>
+    <p class="site-footer__meta">ENGINE_V4.2.0_STABLE // MULTI_PROVIDER</p>
+  </div>
+  <div class="site-footer__links">
+    <a>Terms of Service</a>
+    <a>Privacy Policy</a>
+    <a>API Documentation</a>
+  </div>
+</footer>
+"""
 
 # Placeholder shown in every results panel before the first review.
 _IDLE = (
@@ -305,100 +354,94 @@ def build_app() -> gr.Blocks:
         head=HEAD_HTML,
         fill_height=True,
     ) as demo:
-        # Animated ambient background layers.
+        # Ambient background glow.
         gr.HTML("<div class='aurora'></div><div class='grid-overlay'></div>")
 
-        gr.HTML(
-            """
-            <div class="app-header">
-              <div class="app-header__brand">
-                <span class="app-header__logo">⌘</span>
-                <div>
-                  <h1>AI Code Reviewer Pro</h1>
-                  <p>Principal-level, multi-language code review — with instant
-                     language detection and an actionable, downloadable report.</p>
-                </div>
-              </div>
-              <div class="app-header__badges">
-                <span class="pill pill--live">● Live</span>
-                <span class="pill">15 languages</span>
-                <span class="pill">8 review modes</span>
-              </div>
-            </div>
-            """
-        )
+        # Top navigation bar.
+        gr.HTML(TOPNAV_HTML)
 
-        with gr.Row(equal_height=False):
-            # ---------------- Left: input column ----------------
-            with gr.Column(scale=5, min_width=380):
-                with gr.Group(elem_classes="panel panel--in input-panel"):
+        with gr.Row(equal_height=False, elem_classes="workspace"):
+            # ============ LEFT: Code Editor ============
+            with gr.Column(scale=6, min_width=420, elem_classes="col-editor"):
+                with gr.Group(elem_classes="panel editor-card panel--in"):
                     gr.HTML(
-                        "<div class='card-head'>"
-                        "<span class='card-head__icon'>⌨️</span>"
-                        "<span class='card-head__title'>Code Editor</span>"
-                        "<span class='card-head__sub'>Paste code & configure the review</span>"
-                        "</div>"
+                        "<div class='editor-titlebar'>"
+                        f"{_icon('code', 'editor-title__icon')}"
+                        "<span>Editor: <b>main.py</b></span></div>"
                     )
-                    with gr.Row(elem_classes="control-row"):
+                    with gr.Row(elem_classes="editor-toolbar", equal_height=True):
                         language = gr.Dropdown(
                             LANGUAGES,
                             value="Python",
                             label="Language",
-                            elem_classes="control",
+                            show_label=False,
+                            elem_classes="control toolbar-select",
+                            min_width=120,
+                            scale=1,
                         )
                         mode = gr.Dropdown(
                             REVIEW_MODE_NAMES,
                             value="General",
                             label="Review mode",
-                            elem_classes="control",
-                        )
-                    with gr.Row(elem_classes="detect-bar", equal_height=True):
-                        autodetect = gr.Checkbox(
-                            value=True,
-                            label="🪄 Auto-detect language",
-                            elem_classes="detect-toggle",
-                            scale=2,
-                            container=False,
-                        )
-                        detect_status = gr.Markdown(
-                            "", elem_classes="detect-status"
+                            show_label=False,
+                            elem_classes="control toolbar-select",
+                            min_width=120,
+                            scale=1,
                         )
                     code = gr.Code(
                         value=PLACEHOLDER_CODE,
                         language="python",
                         label="Your code",
-                        lines=20,
+                        lines=22,
                         elem_classes="code-editor",
                     )
-                    with gr.Row():
+                    with gr.Row(elem_classes="editor-actions"):
                         review_btn = gr.Button(
-                            "🔍  Review Code",
+                            "🚀  Review Code",
                             variant="primary",
                             elem_classes="review-btn",
                             scale=3,
                         )
                         clear_btn = gr.Button(
-                            "Clear", elem_classes="ghost-btn", scale=1
+                            "🗑  Clear", elem_classes="ghost-btn", scale=1
                         )
 
-            # ---------------- Right: results column ----------------
-            with gr.Column(scale=7, min_width=420):
-                with gr.Row(equal_height=True, elem_classes="results-top"):
-                    with gr.Column(scale=2, min_width=180):
-                        score = gr.HTML(
-                            SCORE_PLACEHOLDER,
-                            elem_classes="panel score-panel panel--in",
+                with gr.Group(elem_classes="panel detect-card panel--in"):
+                    with gr.Row(elem_classes="detect-bar", equal_height=True):
+                        gr.HTML(
+                            "<div class='detect-label'>"
+                            f"{_icon('auto_fix_high', 'detect-label__icon')}"
+                            "<div><div class='detect-title'>Auto-detect language</div>"
+                            "<div class='detect-sub'>Engine analyzes syntax patterns</div>"
+                            "</div></div>"
                         )
-                    with gr.Column(scale=5, min_width=280):
-                        summary = gr.Markdown(
-                            "<div class='card-head'>"
-                            "<span class='card-head__icon'>📝</span>"
-                            "<span class='card-head__title'>Summary</span></div>"
-                            "<div class='idle-hint'><span class='idle-dot'></span> "
-                            "Run a review to see the executive summary here.</div>",
-                            elem_classes="panel summary-panel panel--in",
+                        autodetect = gr.Checkbox(
+                            value=True,
+                            label="",
+                            elem_classes="detect-toggle",
+                            container=False,
+                            scale=0,
+                            min_width=60,
                         )
+                    detect_status = gr.Markdown("", elem_classes="detect-status")
 
+            # ============ MIDDLE: Score + Summary ============
+            with gr.Column(scale=4, min_width=240, elem_classes="col-mid"):
+                score = gr.HTML(
+                    SCORE_PLACEHOLDER,
+                    elem_classes="panel score-panel panel--in",
+                )
+                summary = gr.Markdown(
+                    "<div class='card-head'>"
+                    f"{_icon('summarize', 'card-head__msicon')}"
+                    "<span class='card-head__title'>Summary</span></div>"
+                    "<div class='idle-hint'><span class='idle-dot'></span> "
+                    "AI is standing by to perform deep code analysis.</div>",
+                    elem_classes="panel summary-panel panel--in",
+                )
+
+            # ============ RIGHT: Analysis Tabs ============
+            with gr.Column(scale=6, min_width=360, elem_classes="col-tabs"):
                 with gr.Group(elem_classes="panel tabs-panel panel--in"):
                   with gr.Tabs(elem_classes="result-tabs"):
                     with gr.Tab("🐞 Bugs"):
@@ -409,7 +452,7 @@ def build_app() -> gr.Blocks:
                         performance_out = gr.Markdown(_IDLE)
                     with gr.Tab("🏛️ Architecture"):
                         architecture_out = gr.Markdown(_IDLE)
-                    with gr.Tab("✅ Best Practices"):
+                    with gr.Tab("✅ Standards"):
                         best_out = gr.Markdown(_IDLE)
                     with gr.Tab("📊 Complexity"):
                         complexity_out = gr.Markdown(_IDLE)
@@ -430,15 +473,7 @@ def build_app() -> gr.Blocks:
                             elem_classes="download-btn",
                         )
 
-        gr.HTML(
-            """
-            <div class="app-footer">
-              Paste code, pick a review mode, then hit
-              <strong>Review Code</strong>. Language is detected automatically —
-              reports can be copied or downloaded.
-            </div>
-            """
-        )
+        gr.HTML(FOOTER_HTML)
 
         # -------------------- Wiring --------------------
         outputs = [
